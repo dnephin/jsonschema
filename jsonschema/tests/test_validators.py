@@ -7,6 +7,7 @@ from jsonschema.tests.compat import mock, unittest
 from jsonschema.validators import (
     RefResolutionError, UnknownType, Draft3Validator,
     Draft4Validator, RefResolver, create, extend, validator_for, validate,
+    UrlParts
 )
 
 
@@ -748,6 +749,23 @@ class TestValidate(unittest.TestCase):
         with mock.patch.object(Draft4Validator, "check_schema") as chk_schema:
             validate({}, {})
             chk_schema.assert_called_once_with({})
+
+
+class TestUrlParts(unittest.TestCase):
+
+    def test_from_uri_with_empty_fragment(self):
+        url = UrlParts.from_uri('http://example.com/schema#')
+        self.assertEqual(url, ('http://example.com', '/schema', ''))
+
+    def test_get_url(self):
+        url = UrlParts('http://example.com', '/path', 'ab')
+        self.assertEqual(url.get_url(), 'http://example.com/path#ab')
+
+    def test_get_url_with_no_fragment(self):
+        url = UrlParts('http://example.com', '/path', 'ab')
+        self.assertEqual(
+            url.get_url(with_fragment=False),
+            'http://example.com/path')
 
 
 class TestRefResolver(unittest.TestCase):

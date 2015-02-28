@@ -75,13 +75,14 @@ def create(meta_schema, validators=(), version=None, default_types=None):  # noq
             for error in cls(cls.META_SCHEMA).iter_errors(schema):
                 raise SchemaError.create_from(error)
 
+        # TODO: it's slow here
         def iter_errors(self, instance, _schema=None):
             if _schema is None:
                 _schema = self.schema
 
             scope = _schema.get(u"id")
             if scope:
-                self.resolver.push_scope(urldefrag(scope))
+                self.resolver.push_scope(get_scope_update(scope))
             try:
                 ref = _schema.get(u"$ref")
                 if ref is not None:
@@ -222,6 +223,45 @@ Draft4Validator = create(
 )
 
 
+import os.path
+from urllib.parse import urlunsplit
+from collections import namedtuple
+class UrlParts(namedtuple('_UrlParse', 'base path fragment')):
+    slots = ()
+
+    @classmethod
+    def from_uri(cls, uri):
+        url = urlsplit(uri)
+        return cls(url.scheme + '://' + url.netloc, url.path, url.fragment)
+
+    def get_url(self, with_fragment=True):
+        return '%s%s%s' % (
+            self.base or '',
+            self.path or '',
+            ('#' + self.fragment if self.fragment else '') if with_fragment else '')
+
+    def replace(self, base=None, path=None, fragment=None):
+        if base:
+            return self.from_uri(base)
+        if path:
+            return self.__class__(
+                self.base,
+                os.path.join(self.path, path),
+                None)
+        if fragment:
+            return self.__class__(self.base, self.path, fragment.lstrip('#'))
+
+        assert False
+
+
+def get_scope_update(uri):
+    if uri.startswith('#'):
+        return {'fragment': uri}
+    if uri.startswith(('http://', 'https://')):
+        return {'base': uri}
+    return {'path': uri}
+
+
 class RefResolver(object):
     """
     Resolve JSON References.
@@ -239,19 +279,18 @@ class RefResolver(object):
     def __init__(
         self, base_uri, referrer, store=(), cache_remote=True, handlers=(),
     ):
-        base_uri = urldefrag(base_uri)
         # This attribute is not used, it is for backwards compatibility
         self.referrer = referrer
         self.cache_remote = cache_remote
         self.handlers = dict(handlers)
 
-        self.scopes_stack = [base_uri]
+        self.scopes_stack = [UrlParts.from_uri(base_uri)]
         self.store = _utils.URIDict(
             (id, validator.META_SCHEMA)
             for id, validator in iteritems(meta_schemas)
         )
         self.store.update(store)
-        self.store[base_uri.url] = referrer
+        self.store[base_uri] = referrer
 
     @classmethod
     def from_schema(cls, schema, *args, **kwargs):
@@ -265,11 +304,8 @@ class RefResolver(object):
 
         return cls(schema.get(u"id", u""), schema, *args, **kwargs)
 
-    def push_scope(self, scope):
-        old_scope = self.resolution_scope
-        url = (urljoin(old_scope.url, scope.url, allow_fragments=False)
-               if scope.url else old_scope.url)
-        self.scopes_stack.append(scope._replace(url=url))
+    def push_scope(self, scope_update):
+        self.scopes_stack.append(self.resolution_scope.replace(**scope_update))
 
     @property
     def resolution_scope(self):
@@ -284,15 +320,10 @@ class RefResolver(object):
         :argument str ref: reference to resolve
 
         """
-        ref = urldefrag(ref)
+        self.push_scope(get_scope_update(ref))
+        scope = self.resolution_scope
 
-        if ref.url:
-            url = urljoin(
-                self.resolution_scope.url,
-                ref.url,
-                allow_fragments=False)
-        else:
-            url = self.resolution_scope.url
+        url = scope.get_url(with_fragment=False)
 
         try:
             document = self.store[url]
@@ -302,9 +333,8 @@ class RefResolver(object):
             except Exception as exc:
                 raise RefResolutionError(exc)
 
-        self.push_scope(DefragResult(url, ref.fragment))
         try:
-            yield self.resolve_fragment(document, ref.fragment)
+            yield self.resolve_fragment(document, scope.fragment)
         finally:
             self.scopes_stack.pop()
 
@@ -361,7 +391,6 @@ class RefResolver(object):
         .. _requests: http://pypi.python.org/pypi/requests/
 
         """
-
         scheme = urlsplit(uri).scheme
 
         if scheme in self.handlers:

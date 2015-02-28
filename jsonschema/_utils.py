@@ -19,8 +19,7 @@ class URIDict(MutableMapping):
         return urlsplit(uri).geturl()
 
     def __init__(self, *args, **kwargs):
-        self.store = dict()
-        self.store.update(*args, **kwargs)
+        self.store = dict(*args, **kwargs)
 
     def __getitem__(self, uri):
         return self.store[uri]
