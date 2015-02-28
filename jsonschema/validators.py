@@ -387,9 +387,9 @@ class RefResolver(object):
 
 
 def validator_for(schema, default=_unset):
-    if default is _unset:
-        default = Draft4Validator
-    return meta_schemas.get(schema.get(u"$schema", u""), default)
+    return meta_schemas.get(
+        meta_schemas.normalize(schema.get(u"$schema", u"")),
+        Draft4Validator if default is _unset else default)
 
 
 def validate(instance, schema, cls=None, *args, **kwargs):

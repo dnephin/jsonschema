@@ -8,11 +8,14 @@ from jsonschema.compat import str_types, MutableMapping, urlsplit
 
 class URIDict(MutableMapping):
     """
-    Dictionary which uses normalized URIs as keys.
+    Dictionary which uses normalized URIs as keys. :func:`normalize` is
+    called when uris are set. ``uri`` passed to get or delete should
+    already be normalzied.
 
     """
 
-    def normalize(self, uri):
+    @classmethod
+    def normalize(cls, uri):
         return urlsplit(uri).geturl()
 
     def __init__(self, *args, **kwargs):
@@ -20,13 +23,13 @@ class URIDict(MutableMapping):
         self.store.update(*args, **kwargs)
 
     def __getitem__(self, uri):
-        return self.store[self.normalize(uri)]
+        return self.store[uri]
 
     def __setitem__(self, uri, value):
         self.store[self.normalize(uri)] = value
 
     def __delitem__(self, uri):
-        del self.store[self.normalize(uri)]
+        del self.store[uri]
 
     def __iter__(self):
         return iter(self.store)
